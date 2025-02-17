@@ -1,9 +1,20 @@
+# -*- coding: utf-8 -*-
+
 import numpy as np
 import math
 from numba import jit
 import vegas
 from mpi4py import MPI
 import time  # 导入 time 模块
+import sys
+
+# 获取当前时间，生成带时间戳的文件名
+current_time = time.strftime("%Y%m%d_%H%M%S")
+output_file = f"output_{current_time}.txt" 
+
+if MPI.COMM_WORLD.Get_rank() == 0:  # 仅主进程将输出重定向到文件
+    sys.stdout = open(output_file, "w", encoding="utf-8")
+
 
 # 在主程序开始时记录时间
 start_time = time.time()
@@ -18,6 +29,9 @@ sigma_perp=1000
 sigma_z=500     # 0.1nm左右
 P_z=5
 b_perp=np.array([0,5000,0])
+
+C_in=-(4*np.pi)**(3/2)*Z*e**3*(4*np.pi)**(3/4)*np.pi/(2*np.pi)**(3)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
+C_out=1/256/np.pi**6
 
 # 定义 2x2 单位矩阵和泡利矩阵
 I_2 = np.eye(2, dtype=np.complex128)
@@ -87,13 +101,6 @@ def three_vec(energy,m,theta,phi):
     res=np.array([p*np.sin(theta)*np.cos(phi),p*np.sin(theta)*np.sin(phi),p*np.cos(theta)])
     return res
 
-# @jit(nopython=True)
-# def two_vec_mod(energy,m,theta,phi):
-#     p=np.sqrt(energy**2-m**2)
-#     two_vec=np.array([p*np.sin(theta)*np.cos(phi),p*np.sin(theta)*np.sin(phi)])
-#     res=np.sqrt(two_vec@two_vec)
-#     return res
-
 @jit(nopython=True)
 def four_vec_slash(energy,m,theta,phi):
     four_vec_=four_vec(energy,m,theta,phi)
@@ -119,7 +126,7 @@ def Phi_cap(epsilon, theta, phi, l):
     two_vec_=np.array([p*np.sin(theta)*np.cos(phi),p*np.sin(theta)*np.sin(phi)])
     two_vec_mod_=np.sqrt(two_vec_@two_vec_)
 
-    res= (4*np.pi)**(3/4)*np.sqrt(epsilon*sigma_z/fact_l)*sigma_perp*(sigma_perp*two_vec_mod_)**(abs(l))\
+    res= np.sqrt(epsilon)*(two_vec_mod_)**(abs(l))\
        *np.exp(-sigma_perp**2*two_vec_mod_**2/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2+1j*l*phi)
     return res
 
@@ -129,7 +136,7 @@ def Phi_cap(epsilon, theta, phi, l):
 def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon_polar_slash_,four_vec_slash_k,four_vec_slash_f):
     epsilon=epsilon_f+omega
     three_vec_i=three_vec(epsilon,me,theta_,phi_)
-    M_res=-(4*np.pi)**(3/2)*Z*e**3/((three_vec_f+three_vec_k-three_vec_i)@(three_vec_f+three_vec_k-three_vec_i))*\
+    M_res=1/((three_vec_f+three_vec_k-three_vec_i)@(three_vec_f+three_vec_k-three_vec_i))*\
                         u_f_@\
                         (1/(2*(omega*epsilon_f-three_vec_k@three_vec_f))*photon_polar_slash_@\
                         (four_vec_slash_f+four_vec_slash_k+me*I_4)@gamma0\
@@ -139,7 +146,7 @@ def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon
                         u(epsilon,theta_,phi_,s)
 
     three_vec_i=three_vec_i.astype(np.complex128)
-    res=np.pi/(2*np.pi)**(3)*np.sin(theta_)*Phi_cap(epsilon,theta_,phi_,l)*np.exp(-1j*b_perp@three_vec_i)*M_res[0]
+    res=np.sin(theta_)*Phi_cap(epsilon,theta_,phi_,l)*np.exp(-1j*b_perp@three_vec_i)*M_res[0]
     return res
 
 
@@ -170,25 +177,29 @@ def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb, N_the
     # **第二步: 再对 theta 方向进行梯形法积分**
     integral = np.trapz(int_phi, theta_vals)
     
-    return integral
+    return integral*C_in
 
 
 
 omega0=2
 # 定义积分域
-epsilon_f_min, epsilon_f_max =me , np.sqrt(P_z**2+me**2)-omega0+2
+epsilon_f_min, epsilon_f_max =np.sqrt(P_z**2+me**2)-omega0-0.01 , np.sqrt(P_z**2+me**2)-omega0+0.01
 theta_f_min, theta_f_max = 0, np.pi
 phi_f_min, phi_f_max = 0, 2 * np.pi
 theta_k_min, theta_k_max = 0, np.pi
 phi_k_min, phi_k_max = 0, 2 * np.pi
 
 # 定义被积函数 (注意: vegas 传递的是一个包含5个值的输入 x)
+
+
 def integrand(x):
     epsilon_f, theta_f, phi_f, theta_k, phi_k = x  # 解包变量
-    curl_L_val = curl_L(s=1, epsilon_f=epsilon_f, theta_f=theta_f,
-                  phi_f=phi_f, s_f=1, omega=omega0, 
-                  theta_k=theta_k, phi_k=phi_k, lamb=1)
-    return np.sin(theta_k) * np.sin(theta_f) * abs(curl_L_val)**2 /256/np.pi**6 
+    curl_L_mod_sq=0
+    for s_for in [-0.5,0.5]:
+        for s_f_for in [-0.5,0.5]:
+            for lamb_for in [-1,1]:
+                curl_L_mod_sq += abs(curl_L(s_for, epsilon_f, theta_f,phi_f, s_f_for, omega0, theta_k, phi_k, lamb_for))**2
+    return np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq/8    #  再乘个C_out便是真实值,除8是极化求和后平均
 
 # 定义 vegas 积分器
 integ = vegas.Integrator([
@@ -206,21 +217,20 @@ rank = comm.Get_rank()  # 获取当前进程的rank
 size = comm.Get_size()  # 获取总进程数
 
 
-# 训练
-if rank == 0:
-    print("开始训练...")
-    
-integ(integrand, nitn=5, neval=1000)
 
 # 计算积分
 if rank == 0:
     print("开始计算...")
-result = integ(integrand, nitn=5, neval=12000)
+# integ(integrand, nitn=20, neval=10000)
+
+result = integ(integrand, nitn=10, neval=100)
+
+# 确保所有进程都完成工作
+comm.Barrier()
 
 # 在 root 进程打印最终结果
 if rank == 0:
-    print(f"Q值: {result.Q:.3f}")
-    print("积分结果:", result, "误差:", result.sdev)
+    print(result.summary())
 
 # 计算结束时间并输出
 end_time = time.time()
@@ -230,6 +240,11 @@ elapsed_time = end_time - start_time
 if rank == 0:
     print(f"总运行时间: {elapsed_time:.2f} 秒")
 
-# 确保所有进程都完成工作
-comm.Barrier()
-# mpiexec -n 4 python 1.py
+# 关闭文件（仅主进程）
+if MPI.COMM_WORLD.Get_rank() == 0:
+    sys.stdout.close()  # 这样可以确保所有内容被写入文件
+
+    
+# mpiexec -n 6 python bremsstrahlung_LG.py
+
+
