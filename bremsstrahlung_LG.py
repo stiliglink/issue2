@@ -9,8 +9,8 @@ import time  # 导入 time 模块
 import sys
 
 # 获取当前时间，生成带时间戳的文件名
-current_time = time.strftime("%Y%m%d_%H%M%S")
-output_file = f"output_{current_time}.txt" 
+current_time = time.strftime("%H%M%S_%m%d")
+output_file = f"res_{current_time}.txt" 
 
 if MPI.COMM_WORLD.Get_rank() == 0:  # 仅主进程将输出重定向到文件
     sys.stdout = open(output_file, "w", encoding="utf-8")
@@ -30,7 +30,7 @@ sigma_z=500     # 0.1nm左右
 P_z=5
 b_perp=np.array([0,5000,0])
 
-C_in=-(4*np.pi)**(3/2)*Z*e**3*(4*np.pi)**(3/4)*np.pi/(2*np.pi)**(3)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
+C_in=-Z*e**3*(4*np.pi)**(3/4)*np.pi/(2*np.pi)**(3)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
 C_out=1/256/np.pi**6
 
 # 定义 2x2 单位矩阵和泡利矩阵
@@ -199,7 +199,7 @@ def integrand(x):
         for s_f_for in [-0.5,0.5]:
             for lamb_for in [-1,1]:
                 curl_L_mod_sq += abs(curl_L(s_for, epsilon_f, theta_f,phi_f, s_f_for, omega0, theta_k, phi_k, lamb_for))**2
-    return np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq/8    #  再乘个C_out便是真实值,除8是极化求和后平均
+    return np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq/2    #  再乘个C_out便是真实值,除2是自旋求和后平均（注意只有入射粒子需要平均）
 
 # 定义 vegas 积分器
 integ = vegas.Integrator([
