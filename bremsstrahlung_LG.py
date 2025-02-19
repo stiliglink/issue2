@@ -30,7 +30,7 @@ sigma_z=500     # 0.1nm左右
 P_z=5
 b_perp=np.array([0,5000,0])
 
-C_in=-Z*e**3*(4*np.pi)**(3/4)*np.pi/(2*np.pi)**(3)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
+C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
 C_out=1/256/np.pi**6
 
 # 定义 2x2 单位矩阵和泡利矩阵
@@ -183,7 +183,7 @@ def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb, N_the
 
 omega0=2
 # 定义积分域
-epsilon_f_min, epsilon_f_max =np.sqrt(P_z**2+me**2)-omega0-0.01 , np.sqrt(P_z**2+me**2)-omega0+0.01
+epsilon_f_min, epsilon_f_max =np.sqrt(P_z**2+me**2)-omega0-0.02 , np.sqrt(P_z**2+me**2)-omega0+0.02
 theta_f_min, theta_f_max = 0, np.pi
 phi_f_min, phi_f_max = 0, 2 * np.pi
 theta_k_min, theta_k_max = 0, np.pi
@@ -221,9 +221,9 @@ size = comm.Get_size()  # 获取总进程数
 # 计算积分
 if rank == 0:
     print("开始计算...")
-# integ(integrand, nitn=20, neval=10000)
+integ(integrand, nitn=12, neval=10000)
 
-result = integ(integrand, nitn=10, neval=100)
+result = integ(integrand, nitn=8, neval=20000)
 
 # 确保所有进程都完成工作
 comm.Barrier()
