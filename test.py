@@ -1,15 +1,22 @@
 import numpy as np
 import vegas
-
-# 定义被积函数
-def integrand(x):
-    return np.sin(x[0]) * np.cos(x[1])
-
-# 创建 vegas 积分器
-integrator = vegas.Integrator([[0, 1], [0, 1]])
+import numpy as np
+from mpi4py import MPI
+import vegas
 
 
-result = integrator(integrand, nitn=20, neval=10000)
+# 加载 .npz 文件
+data = np.load('res_0220_154636.npz')
 
-print(result.summary())
+# 查看文件中的数组名称
+print(data.files)
+
+# 访问特定的数组
+array1 = data['omega_values']
+array2 = data['results']
+
+# 打印数组内容
+print(array1)
+print(array2)
+
  

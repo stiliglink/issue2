@@ -9,12 +9,9 @@ import time  # 导入 time 模块
 import sys
 
 # 获取当前时间，生成带时间戳的文件名
-current_time = time.strftime("%H%M%S_%m%d")
+current_time = time.strftime("%m%d_%H%M%S")
 output_file = f"res_{current_time}.txt" 
-
-if MPI.COMM_WORLD.Get_rank() == 0:  # 仅主进程将输出重定向到文件
-    sys.stdout = open(output_file, "w", encoding="utf-8")
-
+filename = f"res_{current_time}.npz"
 
 # 在主程序开始时记录时间
 start_time = time.time()
@@ -181,34 +178,30 @@ def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb, N_the
 
 
 
-omega0=2
-# 定义积分域
-epsilon_f_min, epsilon_f_max =np.sqrt(P_z**2+me**2)-omega0-0.02 , np.sqrt(P_z**2+me**2)-omega0+0.02
+
 theta_f_min, theta_f_max = 0, np.pi
 phi_f_min, phi_f_max = 0, 2 * np.pi
 theta_k_min, theta_k_max = 0, np.pi
 phi_k_min, phi_k_max = 0, 2 * np.pi
 
 # 定义被积函数 (注意: vegas 传递的是一个包含5个值的输入 x)
-
-
-def integrand(x):
+def integrand(x,omega):
     epsilon_f, theta_f, phi_f, theta_k, phi_k = x  # 解包变量
     curl_L_mod_sq=0
     for s_for in [-0.5,0.5]:
         for s_f_for in [-0.5,0.5]:
             for lamb_for in [-1,1]:
-                curl_L_mod_sq += abs(curl_L(s_for, epsilon_f, theta_f,phi_f, s_f_for, omega0, theta_k, phi_k, lamb_for))**2
+                curl_L_mod_sq += abs(curl_L(s_for, epsilon_f, theta_f,phi_f, s_f_for, omega, theta_k, phi_k, lamb_for))**2
     return np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq/2    #  再乘个C_out便是真实值,除2是自旋求和后平均（注意只有入射粒子需要平均）
 
-# 定义 vegas 积分器
-integ = vegas.Integrator([
-    [epsilon_f_min, epsilon_f_max],   # epsilon_f
-    [theta_f_min, theta_f_max],       # theta_f
-    [phi_f_min, phi_f_max],           # phi_f
-    [theta_k_min, theta_k_max],       # theta_k
-    [phi_k_min, phi_k_max]            # phi_k
-    ],mpi=True)
+epsilon_0=np.sqrt(P_z**2+me**2)
+results=[]
+nitn0=2
+neval0=2
+nitn1=2
+neval1=2
+dot_val=3
+omega_values = np.linspace(1,epsilon_0-me-0.03, dot_val)
 
 
 # 使用 MPI 进行并行计算
@@ -216,32 +209,49 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()  # 获取当前进程的rank
 size = comm.Get_size()  # 获取总进程数
 
+for omega_for in omega_values:
+    # 定义积分域
+    epsilon_f_min, epsilon_f_max =epsilon_0-omega_for-0.02 , epsilon_0-omega_for+0.02
 
+    # 定义 vegas 积分器
+    integ = vegas.Integrator([
+        [epsilon_f_min, epsilon_f_max],   # epsilon_f
+        [theta_f_min, theta_f_max],       # theta_f
+        [phi_f_min, phi_f_max],           # phi_f
+        [theta_k_min, theta_k_max],       # theta_k
+        [phi_k_min, phi_k_max]            # phi_k
+        ],mpi=True)
 
-# 计算积分
+    integ(lambda x: integrand(x, omega_for), nitn=nitn0, neval=neval0)
+
+    result = integ(lambda x: integrand(x, omega_for), nitn=nitn1, neval=neval1)
+
+    if rank == 0:
+        res=result.mean*C_out   # 乘上最后一个系数
+        results.append(res)    
+ 
+
+# 主进程保存结果
 if rank == 0:
-    print("开始计算...")
-integ(integrand, nitn=12, neval=10000)
+    np.savez(filename, omega_values=omega_values, results=results)
 
-result = integ(integrand, nitn=8, neval=20000)
-
-# 确保所有进程都完成工作
-comm.Barrier()
-
-# 在 root 进程打印最终结果
-if rank == 0:
-    print(result.summary())
 
 # 计算结束时间并输出
 end_time = time.time()
-
 # 计算总耗时
 elapsed_time = end_time - start_time
-if rank == 0:
-    print(f"总运行时间: {elapsed_time:.2f} 秒")
 
-# 关闭文件（仅主进程）
-if MPI.COMM_WORLD.Get_rank() == 0:
+
+if rank == 0:
+    # 仅主进程将输出重定向到文件
+    sys.stdout = open(output_file, "w", encoding="utf-8")
+    print(f"总运行时间: {elapsed_time:.2f} 秒\n")
+    print("基本参数:")
+    print("Z=",Z,"l=",l,"sigma_perp=",sigma_perp,"sigma_z=",sigma_z,"P_z=",P_z,"b_perp=",b_perp)
+    print("\n积分参数：")
+    print("训练参数 nitn=",nitn0,"neval=",neval0,"\n结果参数 nitn=",nitn1,"neval=",neval1)
+    print("\n计算的点数：",dot_val)
+    # 关闭文件（仅主进程）
     sys.stdout.close()  # 这样可以确保所有内容被写入文件
 
     
