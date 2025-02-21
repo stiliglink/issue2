@@ -132,6 +132,7 @@ def Phi_cap(epsilon, theta, phi, l):
 @jit(nopython=True)
 def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon_polar_slash_,four_vec_slash_k,four_vec_slash_f):
     epsilon=epsilon_f+omega
+    p_mod=np.sqrt(epsilon**2-me**2)
     three_vec_i=three_vec(epsilon,me,theta_,phi_)
     M_res=1/((three_vec_f+three_vec_k-three_vec_i)@(three_vec_f+three_vec_k-three_vec_i))*\
                         u_f_@\
@@ -143,7 +144,7 @@ def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon
                         u(epsilon,theta_,phi_,s)
 
     three_vec_i=three_vec_i.astype(np.complex128)
-    res=np.sin(theta_)*Phi_cap(epsilon,theta_,phi_,l)*np.exp(-1j*b_perp@three_vec_i)*M_res[0]
+    res=p_mod*np.sin(theta_)*Phi_cap(epsilon,theta_,phi_,l)*np.exp(-1j*b_perp@three_vec_i)*M_res[0]
     return res
 
 
@@ -187,12 +188,13 @@ phi_k_min, phi_k_max = 0, 2 * np.pi
 # 定义被积函数 (注意: vegas 传递的是一个包含5个值的输入 x)
 def integrand(x,omega):
     epsilon_f, theta_f, phi_f, theta_k, phi_k = x  # 解包变量
+    p_f_mod=np.sqrt(epsilon_f**2-me**2)
     curl_L_mod_sq=0
     for s_for in [-0.5,0.5]:
         for s_f_for in [-0.5,0.5]:
             for lamb_for in [-1,1]:
                 curl_L_mod_sq += abs(curl_L(s_for, epsilon_f, theta_f,phi_f, s_f_for, omega, theta_k, phi_k, lamb_for))**2
-    return np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq/2    #  再乘个C_out便是真实值,除2是自旋求和后平均（注意只有入射粒子需要平均）
+    return omega*p_f_mod*np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq/2    #  再乘个C_out便是真实值,除2是自旋求和后平均（注意只有入射粒子需要平均）
 
 epsilon_0=np.sqrt(P_z**2+me**2)
 results=[]
