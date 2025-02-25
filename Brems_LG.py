@@ -7,6 +7,7 @@ import vegas
 from mpi4py import MPI
 import time  # 导入 time 模块
 import sys
+from scipy.integrate import quad
 
 # 获取当前时间，生成带时间戳的文件名
 current_time = time.strftime("%m%d_%H%M%S")
@@ -257,6 +258,6 @@ if rank == 0:
     sys.stdout.close()  # 这样可以确保所有内容被写入文件
 
     
-# mpiexec -n 6 python bremsstrahlung_LG.py
+# mpiexec -n 6 python brems_LG.py
 
 
