@@ -7,11 +7,12 @@ import vegas
 from mpi4py import MPI
 import time  # 导入 time 模块
 import sys
+from scipy.integrate import quad
 
 # 获取当前时间，生成带时间戳的文件名
 current_time = time.strftime("%m%d_%H%M%S")
-output_file = f"res_{current_time}.txt" 
-filename = f"res_{current_time}.npz"
+output_file = f"rtk_{current_time}.txt" 
+filename = f"rtk_{current_time}.npz"
 
 # 在主程序开始时记录时间
 start_time = time.time()
@@ -27,7 +28,8 @@ sigma_z=500     # 0.1nm左右
 P_z=5
 b_perp=np.array([0,5000,0])
 
-C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
+# C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
+C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(2**l*sigma_z/fact_l)*sigma_perp/32   # no_ilphi_r 情况，且仅针对l=10
 C_out=1/256/np.pi**6
 
 # 定义 2x2 单位矩阵和泡利矩阵
@@ -117,17 +119,22 @@ def photon_polar_slash(lamb,theta_k,phi_k):
     return res
 
 
+# @jit(nopython=True)
+# def Phi_cap(epsilon, theta, phi, l):
+#     p=np.sqrt(epsilon**2-me**2)
+#     two_vec_mod_=p*np.sin(theta)
+#     res= np.sqrt(epsilon)*(two_vec_mod_)**(abs(l))\
+#        *np.exp(-sigma_perp**2*two_vec_mod_**2/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2+1j*l*phi) #这里epsilon少乘了个2
+#     return res
+
+## no_ilphi_r
 @jit(nopython=True)
 def Phi_cap(epsilon, theta, phi, l):
     p=np.sqrt(epsilon**2-me**2)
-    two_vec_=np.array([p*np.sin(theta)*np.cos(phi),p*np.sin(theta)*np.sin(phi)])
-    two_vec_mod_=np.sqrt(two_vec_@two_vec_)
-
-    res= np.sqrt(epsilon)*(two_vec_mod_)**(abs(l))\
-       *np.exp(-sigma_perp**2*two_vec_mod_**2/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2+1j*l*phi)
+    sigma_vec_mod_sq=p**2*np.sin(theta)**2*sigma_perp**2
+    res= np.sqrt(epsilon)*(3840-9600*sigma_vec_mod_sq+4800*sigma_vec_mod_sq**2-800*sigma_vec_mod_sq**3+50*sigma_vec_mod_sq**4-sigma_vec_mod_sq**5)\
+       *np.exp(-sigma_vec_mod_sq/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2)   #这里epsilon少乘了个2
     return res
-
-
 
 @jit(nopython=True)
 def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon_polar_slash_,four_vec_slash_k,four_vec_slash_f):
@@ -150,35 +157,48 @@ def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon
 
 
 
-def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb, N_theta=80, N_phi=300):
-    """ 使用梯形法计算复数二重积分 """
-    # 生成 θ 和 φ 的均匀网格点
-    theta_vals = np.linspace(0, 0.0015, N_theta)  # θ 从 0 到 π  这个积分范围要随着sigma与l的变化而变化
-    phi_vals   = np.linspace(0, 2*np.pi, N_phi)  # φ 从 0 到 2π
-    # 计算函数值的网格存放
-    F_vals = np.zeros((N_theta, N_phi), dtype=np.complex128)  # 复数数组
+def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb):
+    """ 使用 quad 计算复数二重积分 """
+    # 定义 theta 和 phi 的积分范围
+     # 其他参数不变的情况下，l=100取0.0015, 0.0026,l=10取0, 0.0015,l=0取0,0.0008
+    theta_min, theta_max = 0,0.0015  # θ 的积分范围
+    phi_min, phi_max = 0, 2 * np.pi   # φ 的积分范围
 
-    
-    three_vec_f_for=three_vec(epsilon_f,me,theta_f,phi_f)
-    three_vec_k_for=three_vec(omega,0,theta_k,phi_k)
-    u_f_for=u_f(epsilon_f,theta_f,phi_f,s_f)
-    photon_polar_slash_for=photon_polar_slash(lamb,theta_k,phi_k)
-    four_vec_slash_k_for=four_vec_slash(omega,0,theta_k,phi_k) 
-    four_vec_slash_f_for=four_vec_slash(epsilon_f,me,theta_f,phi_f)
+    # 预计算一些常量
+    three_vec_f_for = three_vec(epsilon_f, me, theta_f, phi_f)
+    three_vec_k_for = three_vec(omega, 0, theta_k, phi_k)
+    u_f_for = u_f(epsilon_f, theta_f, phi_f, s_f)
+    photon_polar_slash_for = photon_polar_slash(lamb, theta_k, phi_k)
+    four_vec_slash_k_for = four_vec_slash(omega, 0, theta_k, phi_k)
+    four_vec_slash_f_for = four_vec_slash(epsilon_f, me, theta_f, phi_f)
 
-    # 遍历网格, 计算 curl_L_pre
-    for i, theta_for in enumerate(theta_vals):
-        for j, phi_for in enumerate(phi_vals):
-            F_vals[i, j] = curl_L_pre(theta_for,phi_for,s,omega,epsilon_f,three_vec_f_for,three_vec_k_for,u_f_for,photon_polar_slash_for,four_vec_slash_k_for,four_vec_slash_f_for)
-    # **第一步: 先对 phi 方向进行梯形法积分**
-    int_phi = np.trapz(F_vals, phi_vals, axis=1)  # 对每个 theta 积分
-    # **第二步: 再对 theta 方向进行梯形法积分**
-    integral = np.trapz(int_phi, theta_vals)
-    
-    return integral*C_in
+    # 定义被积函数（对 theta 积分）
+    def integrand_theta_real(phi_for):
+        """ 对 theta 积分的实部 """
+        def integrand(theta_for):
+            val = curl_L_pre(theta_for, phi_for, s, omega, epsilon_f, three_vec_f_for, three_vec_k_for, u_f_for, photon_polar_slash_for, four_vec_slash_k_for, four_vec_slash_f_for)
+            return val.real
+        result, _ = quad(integrand, theta_min, theta_max)
+        return result
+
+    def integrand_theta_imag(phi_for):
+        """ 对 theta 积分的虚部 """
+        def integrand(theta_for):
+            val = curl_L_pre(theta_for, phi_for, s, omega, epsilon_f, three_vec_f_for, three_vec_k_for, u_f_for, photon_polar_slash_for, four_vec_slash_k_for, four_vec_slash_f_for)
+            return val.imag
+        result, _ = quad(integrand, theta_min, theta_max)
+        return result
+
+    # 对 phi 进行积分
+    integral_real, error_r = quad(integrand_theta_real, phi_min, phi_max)
+    integral_imag, error_i = quad(integrand_theta_imag, phi_min, phi_max)
+
+    # 合并结果
+    integral = integral_real + 1j * integral_imag
+    return integral * C_in
 
 
-omega0=2
+omega0=3.5
 epsilon_0=np.sqrt(P_z**2+me**2)
 epsilon_f_min, epsilon_f_max =epsilon_0-omega0-0.02 , epsilon_0-omega0+0.02
 theta_f_min, theta_f_max = 0, np.pi
@@ -199,12 +219,16 @@ def integrand(x,theta_k):
 
 
 results=[]
-nitn0=8
-neval0=8000
-nitn1=8
-neval1=12000
-dot_val=1000
-theta_k_vals = np.linspace(0,np.pi, dot_val)
+nitn0=6
+neval0=5000
+nitn1=10
+neval1=8000
+dot_val=100
+# 生成两个区间的点
+theta_k_vals_0 = np.linspace(0, 0.5, int(dot_val*0.8))
+theta_k_vals_1 = np.linspace(0.5, np.pi, int(dot_val*0.2) + 1)[1:]  # 去除重复的 0.5 点
+# 拼接两个区间的点
+theta_k_vals = np.concatenate((theta_k_vals_0, theta_k_vals_1))
 
 
 # 使用 MPI 进行并行计算
@@ -213,8 +237,6 @@ rank = comm.Get_rank()  # 获取当前进程的rank
 size = comm.Get_size()  # 获取总进程数
 
 for theta_k_for in theta_k_vals:
-    # 定义积分域
-    
     # 定义 vegas 积分器
     integ = vegas.Integrator([
         [epsilon_f_min, epsilon_f_max],   # epsilon_f
