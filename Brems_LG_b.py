@@ -11,8 +11,8 @@ from scipy.integrate import quad
 
 # 获取当前时间，生成带时间戳的文件名
 current_time = time.strftime("%m%d_%H%M%S")
-output_file = f"res_{current_time}.txt" 
-filename = f"res_{current_time}.npz"
+output_file = f"rb_{current_time}.txt" 
+filename = f"rb_{current_time}.npz"
 
 # 在主程序开始时记录时间
 start_time = time.time()
@@ -26,10 +26,8 @@ fact_l=math.factorial(abs(l))
 sigma_perp=1000
 sigma_z=500     # 0.1nm左右
 P_z=5
-b_perp=5000
-
-# C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
-C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(2**l*sigma_z/fact_l)*sigma_perp/32   # no_ilphi_r 情况，且仅针对l=10
+C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
+#C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(2**l*sigma_z/fact_l)*sigma_perp/32   # no_ilphi_r 情况，且仅针对l=10
 C_out=1/256/np.pi**6
 
 # 定义 2x2 单位矩阵和泡利矩阵
@@ -100,13 +98,6 @@ def three_vec(energy,m,theta,phi):
     res=np.array([p*np.sin(theta)*np.cos(phi),p*np.sin(theta)*np.sin(phi),p*np.cos(theta)])
     return res
 
-# @jit(nopython=True)
-# def two_vec_mod(energy,m,theta,phi):
-#     p=np.sqrt(energy**2-m**2)
-#     two_vec=np.array([p*np.sin(theta)*np.cos(phi),p*np.sin(theta)*np.sin(phi)])
-#     res=np.sqrt(two_vec@two_vec)
-#     return res
-
 @jit(nopython=True)
 def four_vec_slash(energy,m,theta,phi):
     four_vec_=four_vec(energy,m,theta,phi)
@@ -126,26 +117,26 @@ def photon_polar_slash(lamb,theta_k,phi_k):
     return res
 
 
-# @jit(nopython=True)
-# def Phi_cap(epsilon, theta, phi, l):
-#     p=np.sqrt(epsilon**2-me**2)
-#     two_vec_mod_=p*np.sin(theta)
-#     res= np.sqrt(epsilon)*(two_vec_mod_)**(abs(l))\
-#        *np.exp(-sigma_perp**2*two_vec_mod_**2/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2+1j*l*phi) #这里epsilon少乘了个2
-#     return res
-
-## no_ilphi_r
 @jit(nopython=True)
 def Phi_cap(epsilon, theta, phi, l):
     p=np.sqrt(epsilon**2-me**2)
-    sigma_vec_mod_sq=p**2*np.sin(theta)**2*sigma_perp**2
-    res= np.sqrt(epsilon)*(3840-9600*sigma_vec_mod_sq+4800*sigma_vec_mod_sq**2-800*sigma_vec_mod_sq**3+50*sigma_vec_mod_sq**4-sigma_vec_mod_sq**5)\
-       *np.exp(-sigma_vec_mod_sq/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2)   #这里epsilon少乘了个2
+    two_vec_mod_=p*np.sin(theta)
+    res= np.sqrt(epsilon)*(two_vec_mod_)**(abs(l))\
+       *np.exp(-sigma_perp**2*two_vec_mod_**2/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2+1j*l*phi) #这里epsilon少乘了个2
     return res
+
+# ## no_ilphi_r
+# @jit(nopython=True)
+# def Phi_cap(epsilon, theta, phi, l):
+#     p=np.sqrt(epsilon**2-me**2)
+#     sigma_vec_mod_sq=p**2*np.sin(theta)**2*sigma_perp**2
+#     res= np.sqrt(epsilon)*(3840-9600*sigma_vec_mod_sq+4800*sigma_vec_mod_sq**2-800*sigma_vec_mod_sq**3+50*sigma_vec_mod_sq**4-sigma_vec_mod_sq**5)\
+#        *np.exp(-sigma_vec_mod_sq/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2)   #这里epsilon少乘了个2
+#     return res
 
 
 @jit(nopython=True)
-def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon_polar_slash_,four_vec_slash_k,four_vec_slash_f):
+def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon_polar_slash_,four_vec_slash_k,four_vec_slash_f,b_perp):
     epsilon=epsilon_f+omega
     p_mod=np.sqrt(epsilon**2-me**2)
     three_vec_i=three_vec(epsilon,me,theta_,phi_)
@@ -165,11 +156,11 @@ def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon
 
 
 
-def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb):
+def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb,b_perp):
     """ 使用 quad 计算复数二重积分 """
     # 定义 theta 和 phi 的积分范围
      # 其他参数不变的情况下，l=100取0.0015, 0.0026,l=10取0, 0.0015,l=0取0,0.0008
-    theta_min, theta_max = 0, 0.001 # θ 的积分范围
+    theta_min, theta_max = 0, 0.0015 # θ 的积分范围
     phi_min, phi_max = 0, 2 * np.pi   # φ 的积分范围
 
     # 预计算一些常量
@@ -184,7 +175,7 @@ def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb):
     def integrand_theta_real(phi_for):
         """ 对 theta 积分的实部 """
         def integrand(theta_for):
-            val = curl_L_pre(theta_for, phi_for, s, omega, epsilon_f, three_vec_f_for, three_vec_k_for, u_f_for, photon_polar_slash_for, four_vec_slash_k_for, four_vec_slash_f_for)
+            val = curl_L_pre(theta_for, phi_for, s, omega, epsilon_f, three_vec_f_for, three_vec_k_for, u_f_for, photon_polar_slash_for, four_vec_slash_k_for, four_vec_slash_f_for,b_perp)
             return val.real
         result, _ = quad(integrand, theta_min, theta_max,epsabs=1e-4, epsrel=1e-4)
         return result
@@ -192,7 +183,7 @@ def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb):
     def integrand_theta_imag(phi_for):
         """ 对 theta 积分的虚部 """
         def integrand(theta_for):
-            val = curl_L_pre(theta_for, phi_for, s, omega, epsilon_f, three_vec_f_for, three_vec_k_for, u_f_for, photon_polar_slash_for, four_vec_slash_k_for, four_vec_slash_f_for)
+            val = curl_L_pre(theta_for, phi_for, s, omega, epsilon_f, three_vec_f_for, three_vec_k_for, u_f_for, photon_polar_slash_for, four_vec_slash_k_for, four_vec_slash_f_for,b_perp)
             return val.imag
         result, _ = quad(integrand, theta_min, theta_max,epsabs=1e-4, epsrel=1e-4)
         return result
@@ -211,35 +202,37 @@ theta_f_min, theta_f_max = 0, np.pi
 phi_f_min, phi_f_max = 0, 2 * np.pi
 theta_k_min, theta_k_max = 0, np.pi
 phi_k_min, phi_k_max = 0, 2 * np.pi
+omega0=3.5
 
 # 定义被积函数 (注意: vegas 传递的是一个包含5个值的输入 x)
-def integrand(x,omega):
+def integrand(x,b_perp):
     epsilon_f, theta_f, phi_f, theta_k, phi_k = x  # 解包变量
     p_f_mod=np.sqrt(epsilon_f**2-me**2)
     curl_L_mod_sq=0
     s_for=0.5
     for s_f_for in [-0.5,0.5]:
         for lamb_for in [-1,1]:
-            curl_L_mod_sq += abs(curl_L(s_for, epsilon_f, theta_f,phi_f, s_f_for, omega, theta_k, phi_k, lamb_for))**2
-    return omega*p_f_mod*np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq    #  再乘个C_out便是真实值，这里取入射电子自旋确定
-epsilon_0=np.sqrt(P_z**2+me**2)
+            curl_L_mod_sq += abs(curl_L(s_for, epsilon_f, theta_f,phi_f, s_f_for, omega0, theta_k, phi_k, lamb_for,b_perp))**2
+    return omega0*p_f_mod*np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq    #  再乘个C_out便是真实值，这里取入射电子自旋确定
+
+
 results=[]
+epsilon_0=np.sqrt(P_z**2+me**2)
 nitn0=6
 neval0=10000
 nitn1=10
 neval1=12000
 dot_val=100
-omega_values = np.linspace(1,epsilon_0-me-0.03, dot_val)
-
+b_perps= np.linspace(0,8000,dot_val)
 
 # 使用 MPI 进行并行计算
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()  # 获取当前进程的rank
 size = comm.Get_size()  # 获取总进程数
 
-for omega_for in omega_values:
+for b_for in b_perps:
     # 定义积分域
-    epsilon_f_min, epsilon_f_max =epsilon_0-omega_for-0.02 , epsilon_0-omega_for+0.02
+    epsilon_f_min, epsilon_f_max =epsilon_0-omega0-0.02 , epsilon_0-omega0+0.02
 
     # 定义 vegas 积分器
     integ = vegas.Integrator([
@@ -250,9 +243,9 @@ for omega_for in omega_values:
         [phi_k_min, phi_k_max]            # phi_k
         ],mpi=True)
 
-    integ(lambda x: integrand(x, omega_for), nitn=nitn0, neval=neval0)
+    integ(lambda x: integrand(x,b_for), nitn=nitn0, neval=neval0)
 
-    result = integ(lambda x: integrand(x, omega_for), nitn=nitn1, neval=neval1)
+    result = integ(lambda x: integrand(x, b_for), nitn=nitn1, neval=neval1)
 
     if rank == 0:
         res=result.mean*C_out   # 乘上最后一个系数
@@ -261,7 +254,7 @@ for omega_for in omega_values:
 
 # 主进程保存结果
 if rank == 0:
-    np.savez(filename, omega_values=omega_values, results=results)
+    np.savez(filename, b_perps=b_perps, results=results)
 
 
 # 计算结束时间并输出
@@ -275,7 +268,7 @@ if rank == 0:
     sys.stdout = open(output_file, "w", encoding="utf-8")
     print(f"总运行时间: {elapsed_time:.2f} 秒\n")
     print("基本参数:")
-    print("Z=",Z,"l=",l,"sigma_perp=",sigma_perp,"sigma_z=",sigma_z,"P_z=",P_z,"b_perp=",b_perp)
+    print("Z=",Z,"l=",l,"sigma_perp=",sigma_perp,"sigma_z=",sigma_z,"P_z=",P_z,"omega0=",omega0)
     print("\n积分参数：")
     print("训练参数 nitn=",nitn0,"neval=",neval0,"\n结果参数 nitn=",nitn1,"neval=",neval1)
     print("\n计算的点数：",dot_val)
@@ -283,6 +276,6 @@ if rank == 0:
     sys.stdout.close()  # 这样可以确保所有内容被写入文件
 
     
-# mpiexec -n 6 python brems_LG.py
+# mpiexec -n 6 python brems_LG_b.py
 
 

@@ -26,7 +26,7 @@ fact_l=math.factorial(abs(l))
 sigma_perp=1000
 sigma_z=500     # 0.1nm左右
 P_z=5
-b_perp=np.array([0,5000,0])
+b_perp=5000
 
 # C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
 C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(2**l*sigma_z/fact_l)*sigma_perp/32   # no_ilphi_r 情况，且仅针对l=10
@@ -79,7 +79,7 @@ def u_f(epsilon_f, theta_f, phi_f, s_f):
     return res
 
 @jit(nopython=True)
-def photon_polar(lamb,theta_k,phi_k):
+def photon_polar_conj(lamb,theta_k,phi_k):
     res=np.array([0,
                      1/np.sqrt(2)*(np.cos(theta_k)*np.cos(phi_k)-1j*lamb*np.sin(phi_k)),
                      1/np.sqrt(2)*(np.cos(theta_k)*np.sin(phi_k)-1j*lamb*np.cos(phi_k)),
@@ -111,7 +111,7 @@ def four_vec_slash(energy,m,theta,phi):
 
 @jit(nopython=True)
 def photon_polar_slash(lamb,theta_k,phi_k):
-    photon_polar_=photon_polar(lamb,theta_k,phi_k)
+    photon_polar_=photon_polar_conj(lamb,theta_k,phi_k)
     res= photon_polar_[0]*gamma0
     res +=-photon_polar_[1]*gamma1
     res +=-photon_polar_[2]*gamma2
@@ -151,7 +151,7 @@ def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon
                         u(epsilon,theta_,phi_,s)
 
     three_vec_i=three_vec_i.astype(np.complex128)
-    res=p_mod*np.sin(theta_)*Phi_cap(epsilon,theta_,phi_,l)*np.exp(-1j*b_perp@three_vec_i)*M_res[0]
+    res=p_mod*np.sin(theta_)*Phi_cap(epsilon,theta_,phi_,l)*np.exp(-1j*b_perp*p_mod*np.sin(theta_)*np.sin(phi_))*M_res[0]
     return res
 
 
@@ -211,11 +211,11 @@ def integrand(x,theta_k):
     epsilon_f, theta_f, phi_f, phi_k = x  # 解包变量
     p_f_mod=np.sqrt(epsilon_f**2-me**2)
     curl_L_mod_sq=0
-    for s_for in [-0.5,0.5]:
-        for s_f_for in [-0.5,0.5]:
-            for lamb_for in [-1,1]:
-                curl_L_mod_sq += abs(curl_L(s_for, epsilon_f, theta_f,phi_f, s_f_for, omega0, theta_k, phi_k, lamb_for))**2
-    return omega0*p_f_mod*np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq/2    #  再乘个C_out便是真实值,除2是自旋求和后平均（注意只有入射粒子需要平均）
+    s_for=0.5
+    for s_f_for in [-0.5,0.5]:
+        for lamb_for in [-1,1]:
+            curl_L_mod_sq += abs(curl_L(s_for, epsilon_f, theta_f,phi_f, s_f_for, omega0, theta_k, phi_k, lamb_for))**2
+    return omega0*p_f_mod * np.sin(theta_f) * curl_L_mod_sq    #  再乘个C_out便是真实值,这里取入射电子自旋确定,且sin(theta_k)移动至等号左边
 
 
 results=[]
