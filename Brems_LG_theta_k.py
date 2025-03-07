@@ -215,11 +215,11 @@ def integrand(x,theta_k):
 
 
 results=[]
-nitn0=2
-neval0=2
-nitn1=2
-neval1=2
-dot_val=3
+nitn0=6
+neval0=5000
+nitn1=10
+neval1=8000
+dot_val=100
 # 生成两个区间的点
 theta_k_vals_0 = np.linspace(0, 0.5, int(dot_val*0.8))
 theta_k_vals_1 = np.linspace(0.5, np.pi, int(dot_val*0.2) + 1)[1:]  # 去除重复的 0.5 点

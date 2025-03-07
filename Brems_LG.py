@@ -212,11 +212,11 @@ def integrand(x,omega):
     return omega*p_f_mod*np.sin(theta_k) * np.sin(theta_f) * curl_L_mod_sq    #  再乘个C_out便是真实值，这里取入射电子自旋确定
 epsilon_0=np.sqrt(P_z**2+me**2)
 results=[]
-nitn0=2
-neval0=2
-nitn1=2
-neval1=2
-dot_val=3
+nitn0=6
+neval0=10000
+nitn1=10
+neval1=12000
+dot_val=100
 omega_values = np.linspace(1,epsilon_0-me-0.03, dot_val)
 
 

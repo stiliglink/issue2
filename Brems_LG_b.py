@@ -19,7 +19,7 @@ start_time = time.time()
 
 me=0.511
 e=0.303
-Z=57
+Z=29
 l=10
 fact_l=math.factorial(abs(l))
 # 这里sigma是坐标空间的
@@ -27,7 +27,8 @@ sigma_perp=1000
 sigma_z=500     # 0.1nm左右
 P_z=5
 C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(sigma_z/fact_l)*sigma_perp*(sigma_perp)**(abs(l))
-#C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(2**l*sigma_z/fact_l)*sigma_perp/32   # no_ilphi_r 情况，且仅针对l=10
+# C_in=-Z*e**3*np.pi/(2*np.pi)**(3)*(4*np.pi)**(3/4)*np.sqrt(2**l*sigma_z/fact_l)*sigma_perp/32   # no_ilphi_r 情况，且仅针对l=10
+
 C_out=1/256/np.pi**6
 
 # 定义 2x2 单位矩阵和泡利矩阵
@@ -45,46 +46,12 @@ gamma3 = np.block([[np.zeros((2, 2)), sigma3], [-sigma3, np.zeros((2, 2))]])
 
 
 @jit(nopython=True)
-def w(theta,phi,s):
-    res=np.array([[np.exp(-1j*phi/2)*np.cos((theta+(1/2-s)*np.pi)/2)], [np.exp(1j*phi/2)*np.sin((theta+(1/2-s)*np.pi)/2)]], dtype=np.complex128)
-    return res
-
-
-@jit(nopython=True)
-def w_dagger(theta,phi,s):
-    res=np.array([np.exp(1j*phi/2)*np.cos((theta+(1/2-s)*np.pi)/2), np.exp(-1j*phi/2)*np.sin((theta+(1/2-s)*np.pi)/2)], dtype=np.complex128)
-    return res
-
-@jit(nopython=True)
-def u(epsilon, theta, phi, s):
-    w_component = w(theta, phi, s)
-    upper_part = np.sqrt(epsilon + me) * w_component
-    lower_part = 2 * np.sqrt(epsilon - me) * s * w_component
-    res = np.empty((len(upper_part) + len(lower_part), upper_part.shape[1]), dtype=np.complex128)
-    res[:len(upper_part), :] = upper_part
-    res[len(upper_part):, :] = lower_part
-    return res
-
-
-@jit(nopython=True)
-def u_f(epsilon_f, theta_f, phi_f, s_f):
-    w_dagger_component= w_dagger(theta_f, phi_f, s_f)
-    component_1 = np.sqrt(epsilon_f + me) * w_dagger_component
-    component_2 = -2 * np.sqrt(epsilon_f - me) * s_f * w_dagger_component
-    res = np.zeros(2 * len(component_1), dtype=np.complex128) 
-    res[:len(component_1)] = component_1
-    res[len(component_1):] = component_2
-    return res
-
-@jit(nopython=True)
 def photon_polar_conj(lamb,theta_k,phi_k):
     res=np.array([0,
-                     1/np.sqrt(2)*(np.cos(theta_k)*np.cos(phi_k)-1j*lamb*np.sin(phi_k)),
-                     1/np.sqrt(2)*(np.cos(theta_k)*np.sin(phi_k)-1j*lamb*np.cos(phi_k)),
-                     1/np.sqrt(2)*np.sin(theta_k)], dtype=np.complex128)
+                     1/np.sqrt(2)*(-lamb*np.cos(theta_k)*np.cos(phi_k)-1j*np.sin(phi_k)),
+                     1/np.sqrt(2)*(-lamb*np.cos(theta_k)*np.sin(phi_k)+1j*np.cos(phi_k)),
+                     lamb/np.sqrt(2)*np.sin(theta_k)], dtype=np.complex128)
     return res
-
-
 
 @jit(nopython=True)
 def four_vec(energy,m,theta,phi):
@@ -115,25 +82,56 @@ def photon_polar_slash(lamb,theta_k,phi_k):
     res +=-photon_polar_[2]*gamma2
     res +=-photon_polar_[3]*gamma3
     return res
+    
+@jit(nopython=True)
+def u(energy,theta,phi,spin):
+    fvp=four_vec(energy,me,theta,phi)
+    if spin > 0:
+        part1=np.sqrt(fvp[0]+me)
+        part2=0
+        part3=fvp[3]/np.sqrt(fvp[0]+me)
+        part4=(fvp[1]+1j*fvp[2])/np.sqrt(fvp[0]+me)  
+    if spin < 0:
+        part1=0
+        part2=np.sqrt(fvp[0]+me)
+        part3=(fvp[1]-1j*fvp[2])/np.sqrt(fvp[0]+me)
+        part4=(-fvp[3])/np.sqrt(fvp[0]+me)
+    res=np.array([part1,part2,part3,part4],dtype=np.complex128)
+    return res
 
+@jit(nopython=True)
+def u_f(energy,theta,phi,spin):
+    fvp=four_vec(energy,me,theta,phi)
+    if spin > 0:
+        part1=np.sqrt(fvp[0]+me)
+        part2=0
+        part3=-fvp[3]/np.sqrt(fvp[0]+me)
+        part4=-(fvp[1]-1j*fvp[2])/np.sqrt(fvp[0]+me)  
+    if spin < 0:
+        part1=0
+        part2=np.sqrt(fvp[0]+me)
+        part3=-(fvp[1]+1j*fvp[2])/np.sqrt(fvp[0]+me)
+        part4=(fvp[3])/np.sqrt(fvp[0]+me)
+    res=np.array([part1,part2,part3,part4],dtype=np.complex128)
+    return res
 
 @jit(nopython=True)
 def Phi_cap(epsilon, theta, phi, l):
     p=np.sqrt(epsilon**2-me**2)
     two_vec_mod_=p*np.sin(theta)
-    res= np.sqrt(epsilon)*(two_vec_mod_)**(abs(l))\
-       *np.exp(-sigma_perp**2*two_vec_mod_**2/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2+1j*l*phi) #这里epsilon少乘了个2
+    res= np.sqrt(2*epsilon)*(two_vec_mod_)**(abs(l))\
+       *np.exp(-sigma_perp**2*two_vec_mod_**2/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2+1j*l*phi)
     return res
+
 
 # ## no_ilphi_r
 # @jit(nopython=True)
 # def Phi_cap(epsilon, theta, phi, l):
 #     p=np.sqrt(epsilon**2-me**2)
 #     sigma_vec_mod_sq=p**2*np.sin(theta)**2*sigma_perp**2
-#     res= np.sqrt(epsilon)*(3840-9600*sigma_vec_mod_sq+4800*sigma_vec_mod_sq**2-800*sigma_vec_mod_sq**3+50*sigma_vec_mod_sq**4-sigma_vec_mod_sq**5)\
-#        *np.exp(-sigma_vec_mod_sq/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2)   #这里epsilon少乘了个2
+#     res= np.sqrt(2*epsilon)*(3840-9600*sigma_vec_mod_sq+4800*sigma_vec_mod_sq**2-800*sigma_vec_mod_sq**3+50*sigma_vec_mod_sq**4-sigma_vec_mod_sq**5)\
+#        *np.exp(-sigma_vec_mod_sq/2-sigma_z**2*(p*np.cos(theta)-P_z)**2/2)
 #     return res
-
 
 @jit(nopython=True)
 def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon_polar_slash_,four_vec_slash_k,four_vec_slash_f,b_perp):
@@ -148,9 +146,7 @@ def curl_L_pre(theta_,phi_,s,omega,epsilon_f,three_vec_f,three_vec_k,u_f_,photon
                         1/(-2*(omega*epsilon-three_vec_k@three_vec_i))*gamma0@\
                         (four_vec_slash(epsilon,me,theta_,phi_)-four_vec_slash_k+me*I_4)@photon_polar_slash_)@\
                         u(epsilon,theta_,phi_,s)
-
-    three_vec_i=three_vec_i.astype(np.complex128)
-    res=p_mod*np.sin(theta_)*Phi_cap(epsilon,theta_,phi_,l)*np.exp(-1j*b_perp*p_mod*np.sin(theta_)*np.sin(phi_))*M_res[0]
+    res=C_in*p_mod*np.sin(theta_)*Phi_cap(epsilon,theta_,phi_,l)*np.exp(-1j*b_perp*p_mod*np.sin(theta_)*np.cos(phi_))*M_res
     return res
 
 
@@ -177,7 +173,7 @@ def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb,b_perp
         def integrand(theta_for):
             val = curl_L_pre(theta_for, phi_for, s, omega, epsilon_f, three_vec_f_for, three_vec_k_for, u_f_for, photon_polar_slash_for, four_vec_slash_k_for, four_vec_slash_f_for,b_perp)
             return val.real
-        result, _ = quad(integrand, theta_min, theta_max,epsabs=1e-4, epsrel=1e-4)
+        result, _ = quad(integrand, theta_min, theta_max)
         return result
 
     def integrand_theta_imag(phi_for):
@@ -185,16 +181,16 @@ def curl_L(s, epsilon_f, theta_f, phi_f, s_f, omega, theta_k, phi_k, lamb,b_perp
         def integrand(theta_for):
             val = curl_L_pre(theta_for, phi_for, s, omega, epsilon_f, three_vec_f_for, three_vec_k_for, u_f_for, photon_polar_slash_for, four_vec_slash_k_for, four_vec_slash_f_for,b_perp)
             return val.imag
-        result, _ = quad(integrand, theta_min, theta_max,epsabs=1e-4, epsrel=1e-4)
+        result, _ = quad(integrand, theta_min, theta_max)
         return result
 
     # 对 phi 进行积分
-    integral_real, error_r = quad(integrand_theta_real, phi_min, phi_max,epsabs=1e-4, epsrel=1e-4)
-    integral_imag, error_i = quad(integrand_theta_imag, phi_min, phi_max,epsabs=1e-4, epsrel=1e-4)
+    integral_real, error_r = quad(integrand_theta_real, phi_min, phi_max)
+    integral_imag, error_i = quad(integrand_theta_imag, phi_min, phi_max)
 
     # 合并结果
     integral = integral_real + 1j * integral_imag
-    return integral * C_in
+    return integral
 
 
 

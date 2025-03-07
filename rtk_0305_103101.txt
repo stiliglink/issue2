@@ -1,0 +1,12 @@
+总运行时间: 12269.25 秒
+
+基本参数:
+Z= 29 l= 10 sigma_perp= 1000 sigma_z= 500 P_z= 5 b_perp0= 3152 omega0= 3.5
+
+积分参数：
+训练参数 nitn= 6 neval= 5000 
+结果参数 nitn= 10 neval= 8000
+
+计算的点数： 100
+
+ no_phi_r
